@@ -235,22 +235,30 @@ the core memory skills depends on it.
 ## Optional: automatic chat import
 
 Hand-written `/save` notes are a *summary*. If you also want full, searchable
-transcripts of every session imported into the vault automatically:
+transcripts of every session imported into the vault automatically, `/setup` handles
+most of this for you (step 4/5 — see [`/setup`](#setup) above):
 
-1. Install the extractor fork that adds `cwd`/`project` metadata to exports (needed
-   for routing — the upstream extractor doesn't include this):
-   ```bash
-   pip install git+https://github.com/Ngobo/claude-conversation-extractor.git@add-cwd-project-metadata
-   ```
-2. Use `scripts/claude_to_obsidian.py` (lives in your vault repo, not this one — it's
-   vault content, not a skill) to process exports: it reads each session's `cwd`,
-   resolves it through the same `vault-scope.json` logic as the skills above, tags it,
-   and writes it to `chats/<project>/imported/` in the correct vault — automatically
-   split between shared and private vaults in a single run.
-3. Optionally cron it (see `scripts/sync_obsidian.sh` for a ready-made driver):
-   ```bash
-   (crontab -l 2>/dev/null; echo "0 22 * * * /path/to/vault/scripts/sync_obsidian.sh") | crontab -
-   ```
+- It installs `scripts/claude_to_obsidian.py` and `scripts/sync_obsidian.sh` from this
+  repo to `~/.claude/skills/scripts/` — general-purpose, not tied to any one vault.
+- It checks whether the extractor fork is installed (see below) and tells you if not,
+  without installing it automatically.
+- It offers to schedule a daily cron job (asked once; silently refreshed on later
+  `/setup` re-runs if you already said yes).
+
+The one manual step `/setup` won't do for you — installing the extractor fork, since
+that's a systemwide pip install rather than something scoped to `~/.claude/`:
+
+```bash
+pip install git+https://github.com/Ngobo/claude-conversation-extractor.git@add-cwd-project-metadata
+```
+
+This fork adds `cwd`/`project` metadata to exports, which `claude_to_obsidian.py` needs
+for routing — the plain upstream extractor doesn't include it. Once installed,
+`sync_obsidian.sh` reads each session's `cwd`, resolves it through the same
+`vault-scope.json` logic as the skills above, tags it, and writes it to
+`chats/<project>/imported/` in the correct vault — shared and private sessions get
+split correctly in a single run. Idempotent: a session already imported is skipped,
+not duplicated, on every re-run (cron or manual).
 
 Re-runs are idempotent — a session already imported is skipped, not duplicated.
 
@@ -267,6 +275,9 @@ claude-memory-skills/
 │   └── lib/
 │       ├── resolve-vault.sh     # scope-resolution algorithm, shared by every skill
 │       └── scaffold-vault.sh    # creates a new vault's folder structure + git init
+├── scripts/
+│   ├── claude_to_obsidian.py    # tags + routes exported sessions into the right vault
+│   └── sync_obsidian.sh         # driver: export via claude-extract, then process
 ├── README.md
 └── LICENSE
 ```
