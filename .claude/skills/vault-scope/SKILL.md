@@ -78,13 +78,14 @@ echo "${found:-not found}"
     ```
   - *Cancel* → stop, no changes made.
 
-### 5. Always copy notes between vaults when the vault is actually changing
+### 5. Preview what would be copied, then ask — on every switch
 
-This always runs, unconditionally — no prompt, no yes/no question — on first-time
-setup **and** on every subsequent switch of an already-scoped repo. A project that
-flips private → shared → private → shared over its lifetime must not lose or
-duplicate notes at any point in that history, so this is not optional and not
-gated on asking the user.
+This runs every time the vault is actually changing — on first-time setup **and** on
+every subsequent switch of an already-scoped repo — symmetrically in both directions
+(shared→private and private→shared). Switching a repo's scope is a meaningful action
+either way: private→shared can expose previously-private notes to teammates, and even
+shared→private is worth a clear heads-up about what's moving where. So this always
+previews and asks; it never copies silently.
 
 ```bash
 source ~/.claude/skills/lib/resolve-vault.sh
@@ -97,25 +98,46 @@ OLD_PROJECT="$VAULT_PROJECT"
 change — capture them again here since step 4 may have run other commands since.)
 
 Compare `$OLD_VAULT` against the target vault path determined in step 4. If they
-resolve to the same directory, skip this step — nothing to copy. Otherwise, merge
-`chats/<project>/` (including any `imported/` subfolder) from the old vault into the
-new one:
+resolve to the same directory, skip this step entirely — nothing to change. Otherwise,
+compute what would actually be copied — only files missing at the destination, since
+anything already there from an earlier switch shouldn't be re-touched:
 
 ```bash
+NEW_VAULT="<new vault>"
+PROJECT="<project>"
+TO_COPY=""
+COUNT=0
 if [ -d "$OLD_VAULT/chats/$OLD_PROJECT" ]; then
-  mkdir -p "<new vault>/chats/<project>"
-  cp -r --update=none "$OLD_VAULT/chats/$OLD_PROJECT/." "<new vault>/chats/<project>/"
-  echo "Copied chats/$OLD_PROJECT/ from $OLD_VAULT to <new vault>."
-else
-  echo "No existing notes at $OLD_VAULT/chats/$OLD_PROJECT/ — nothing to copy."
+  while IFS= read -r -d '' f; do
+    rel="${f#"$OLD_VAULT/chats/$OLD_PROJECT/"}"
+    if [ ! -e "$NEW_VAULT/chats/$PROJECT/$rel" ]; then
+      COUNT=$((COUNT + 1))
+      TO_COPY="$TO_COPY$rel
+"
+    fi
+  done < <(find "$OLD_VAULT/chats/$OLD_PROJECT" -type f -print0 2>/dev/null)
 fi
+echo "$COUNT file(s) would be copied from $OLD_VAULT to $NEW_VAULT:"
+printf '%s' "$TO_COPY" | head -10
 ```
 
-`--update=none` (no-clobber) means files already present at the destination from an
-earlier switch are left untouched; only files missing there get copied. The source is
-never modified or deleted. Because this always runs on every switch, a project's notes
-accumulate correctly no matter how many times it flips scope over time — each switch
-picks up exactly what's new since the last one.
+- If `$COUNT` is 0, skip the prompt — nothing new to copy, say so, and move on.
+- Otherwise ask via AskUserQuestion, showing the count and (up to 10) file names from
+  `$TO_COPY`:
+
+  > "Switching from $VAULT_SCOPE ($OLD_VAULT) to <target scope> ($NEW_VAULT) — copy
+  > these $COUNT note(s) from the old vault to the new one? [file list]"
+  > Options: "Yes, copy them" / "No, leave them in the old vault"
+
+  - *Yes* → copy exactly what was previewed:
+    ```bash
+    mkdir -p "$NEW_VAULT/chats/$PROJECT"
+    cp -r --update=none "$OLD_VAULT/chats/$OLD_PROJECT/." "$NEW_VAULT/chats/$PROJECT/"
+    echo "Copied."
+    ```
+  - *No* → skip copying. The notes stay only in `$OLD_VAULT`; nothing is deleted or
+    moved either way, and the scope switch itself (step 6) still proceeds regardless
+    of this answer.
 
 ### 6. Write the marker
 
