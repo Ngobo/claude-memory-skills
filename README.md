@@ -124,12 +124,12 @@ Deliberately low-friction — no subcommand syntax to memorize for the common ca
 | `/vault-scope private` | Sets this repo to private scope, defaulting to `~/vault` (scaffolded automatically if it doesn't exist yet) |
 | `/vault-scope status` | Read-only — just prints the current resolution, no prompts |
 
-Switching scope always merges `chats/<project>/` (notes and any `imported/` transcripts)
-from the old vault into the new one — automatically, not an optional prompt. This runs
-every time, including the Nth time a project flips back and forth between shared and
-private, so notes accumulate correctly across the whole history: only files missing at
-the destination are copied (`cp --update=none`), so nothing already there gets
-re-clobbered, and the source is never modified or deleted.
+Switching scope previews exactly what would move — only files from
+`chats/<project>/` (including `imported/`) missing at the destination, so anything
+already copied from an earlier switch isn't re-touched — and asks before copying,
+every time, in both directions. private→shared can expose previously-private notes
+to teammates, so this is never silent; declining still lets the scope switch itself
+go through, and the source is never modified or deleted either way.
 
 ### `/project-init`
 
@@ -282,11 +282,11 @@ You'll be asked whether to point at an existing shared vault (enter its path) or
 scaffold a brand new one at a location you choose. Nothing is created silently.
 
 **What happens to notes if I switch a repo from shared to private (or back)?**
-`/vault-scope` automatically merges existing notes for that project into the new
-vault — no prompt, always on. The old copy is never deleted or modified, and files
-already present at the destination (from an earlier switch) are never re-clobbered,
-so you can flip a project between shared and private any number of times without
-losing or duplicating notes.
+`/vault-scope` shows you exactly which notes would move (only ones missing at the
+destination — nothing already-copied gets touched again) and asks before copying.
+Declining still switches the scope; the notes just stay only in the old vault. The
+old copy is never deleted or modified either way, so you can flip a project between
+shared and private any number of times without losing or duplicating notes.
 
 **Does this require Obsidian?**
 No. Everything is plain markdown with YAML frontmatter. Obsidian (or any markdown
