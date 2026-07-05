@@ -1,0 +1,143 @@
+# /vault-scope
+
+Check or change whether this project uses the shared team vault or a personal/private
+vault. Writes `.claude/vault-scope.json` in the current repo (commit it to git so
+teammates see the same resolution).
+
+## Usage
+- `/vault-scope` — show current resolution, offer to change it
+- `/vault-scope shared [path]` — set this repo to shared scope (path optional)
+- `/vault-scope private` — set this repo to private scope (defaults to `~/vault`)
+- `/vault-scope status` — read-only, just print the resolution, no prompts, no writes
+
+## Steps
+
+### 1. Always resolve current state first
+
+```bash
+source ~/.claude/skills/lib/resolve-vault.sh
+resolve_vault_scope
+echo "Current scope: $VAULT_SCOPE"
+echo "Current vault: $VAULT_DIR"
+echo "Marker found in this repo: ${VAULT_MARKER_FOUND:-no (using default)}"
+```
+
+### 2. `status` — stop here
+
+If the user ran `/vault-scope status`, just report the values from step 1 and stop.
+No prompts, no writes.
+
+### 3. No arguments — ask what to do
+
+If the user ran plain `/vault-scope` with no arguments, ask via AskUserQuestion:
+
+> "This project currently resolves to **$VAULT_SCOPE** scope (vault: $VAULT_DIR). What
+> would you like to do?"
+> Options: "Keep as is" / "Switch to shared" / "Switch to private"
+
+"Keep as is" → stop, nothing to change. Otherwise continue to step 4 with the target
+scope the user picked. If the user instead ran `/vault-scope shared [path]` or
+`/vault-scope private` directly, skip this prompt and go straight to step 4 with that
+target scope.
+
+### 4. Determine the target vault path
+
+**Target = private:** default path is `~/vault`. If it doesn't exist yet:
+```bash
+source ~/.claude/skills/lib/scaffold-vault.sh
+scaffold_vault_if_missing ~/vault
+```
+
+**Target = shared:** if the user gave an explicit path argument, use it directly (skip
+the search below). Otherwise look for the nearest ancestor directory (above the current
+repo) that itself contains a `vault/` subdirectory which is a git repo:
+```bash
+dir=$(dirname "$PWD")
+found=""
+while [ "$dir" != "/" ]; do
+  if [ -d "$dir/vault/.git" ]; then
+    found="$dir/vault"
+    break
+  fi
+  dir=$(dirname "$dir")
+done
+echo "${found:-not found}"
+```
+
+- If found, use it.
+- If **not found**, ask via AskUserQuestion:
+  > "No shared vault found near this project. What would you like to do?"
+  > Options: "Enter the path to an existing shared vault" / "Create a new shared vault here" / "Cancel"
+  - *Enter existing path* → user picks Other and types a path. Verify it's a real
+    directory with a `.git` inside; if not, say so and stop without writing anything.
+  - *Create new* → user picks Other and types where. Run the same scaffolding helper
+    used for private vaults:
+    ```bash
+    source ~/.claude/skills/lib/scaffold-vault.sh
+    scaffold_vault_if_missing "<path the user gave>"
+    ```
+  - *Cancel* → stop, no changes made.
+
+### 5. Offer to copy existing notes if the vault is actually changing
+
+```bash
+source ~/.claude/skills/lib/resolve-vault.sh
+resolve_vault_scope
+ls "$VAULT_DIR/chats/$VAULT_PROJECT"/*.md 2>/dev/null | head -1
+```
+
+If this repo already has notes under the *current* (about-to-be-replaced) vault's
+`chats/$VAULT_PROJECT/`, and the target vault path from step 4 is a different directory,
+ask via AskUserQuestion:
+
+> "Copy existing notes to the new vault too? Yes / No"
+
+If yes, copy (never move/delete the source):
+```bash
+mkdir -p "<new vault>/chats/<project>"
+cp "<old vault>/chats/<project>"/*.md "<new vault>/chats/<project>/" 2>/dev/null
+```
+
+### 6. Write the marker
+
+Preserve the existing `graphify` key if one is already set (from `/project-init`).
+Write the vault path in portable form: `../vault` style relative path when the target
+vault is a direct sibling of the current repo, otherwise the `~/...` form when it's
+under `$HOME`, otherwise an absolute path.
+
+```bash
+mkdir -p .claude
+python3 - << 'PYEOF'
+import json, pathlib, os
+
+marker = pathlib.Path(".claude/vault-scope.json")
+existing = json.load(open(marker)) if marker.exists() else {}
+
+target_scope = "SHARED_OR_PRIVATE"          # fill in from step 3/4
+target_vault_abs = "/absolute/path/to/vault"  # fill in from step 4
+
+home = os.path.expanduser("~")
+cwd_parent = os.path.dirname(os.getcwd())
+if os.path.normpath(target_vault_abs) == os.path.normpath(os.path.join(cwd_parent, "vault")):
+    portable = "../vault"
+elif target_vault_abs.startswith(home):
+    portable = "~" + target_vault_abs[len(home):]
+else:
+    portable = target_vault_abs
+
+existing["scope"] = target_scope
+existing["vault"] = portable
+json.dump(existing, open(marker, "w"), indent=2)
+existing.setdefault("graphify", existing.get("graphify", False))
+print(json.dumps(existing, indent=2))
+PYEOF
+```
+
+(Fill in `target_scope` / `target_vault_abs` with the actual resolved values from the
+steps above before running — don't leave the placeholders literal.)
+
+### 7. Report
+
+Confirm the new scope + vault path, whether notes were copied, and remind the user to
+`git add .claude/vault-scope.json && git commit` so teammates see the same scope (for
+shared repos).
