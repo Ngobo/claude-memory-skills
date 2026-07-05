@@ -104,10 +104,58 @@ else
 fi
 ```
 
-### 4. Done
+### 4. Install chat-import scripts
+
+These are general-purpose too — not tied to any particular vault — so they install
+globally alongside the skills themselves:
+
+```bash
+mkdir -p ~/.claude/skills/scripts
+cp scripts/claude_to_obsidian.py ~/.claude/skills/scripts/claude_to_obsidian.py
+cp scripts/sync_obsidian.sh ~/.claude/skills/scripts/sync_obsidian.sh
+chmod +x ~/.claude/skills/scripts/sync_obsidian.sh
+echo "Chat-import scripts installed to ~/.claude/skills/scripts/."
+```
+
+Check whether the extractor fork is installed (it adds the `cwd`/`project` metadata
+the import script needs for routing — the plain upstream extractor doesn't have it):
+
+```bash
+python3 -c "import extract_claude_logs" 2>/dev/null \
+  && echo "claude-conversation-extractor already installed." \
+  || echo "Not installed. Chat import won't work until you run: pip install git+https://github.com/Ngobo/claude-conversation-extractor.git@add-cwd-project-metadata"
+```
+
+Don't install it automatically — just report its presence/absence, same as Graphify.
+
+### 5. Offer to schedule automatic chat import (optional, asked once)
+
+Check whether a cron entry for this already exists:
+
+```bash
+crontab -l 2>/dev/null | grep -q "sync_obsidian.sh" && echo "already scheduled" || echo "not scheduled"
+```
+
+- If **already scheduled**, just refresh the path in case it changed (e.g. an earlier
+  install pointed at a repo checkout instead of the global location), without asking
+  again:
+  ```bash
+  (crontab -l 2>/dev/null | grep -v "sync_obsidian.sh"; echo "0 22 * * * $HOME/.claude/skills/scripts/sync_obsidian.sh") | crontab -
+  echo "Cron entry refreshed (daily 22:00)."
+  ```
+- If **not scheduled**, ask via AskUserQuestion:
+  > "Schedule automatic daily chat import via cron (22:00)? Requires the extractor fork
+  > from step 4 — sessions won't import until that's installed, but scheduling it now
+  > is harmless either way." Options: "Yes, schedule it" / "No, skip for now"
+  - *Yes* → run the same crontab command as above.
+  - *No* → skip. Mention `/setup` can be re-run later to add it.
+
+### 6. Done
 
 Report what was done vs. already in place. Tell the user:
 - `/resume`, `/save`, `/vault-scope` work from any project directory (shared or private,
   resolved automatically).
 - Run `/vault-scope shared [path]` or `/vault-scope private` to explicitly set a repo's
   scope, then `/project-init` to scaffold its CLAUDE.md.
+- Whether chat import is fully wired up (extractor fork installed + cron scheduled),
+  partially (one but not the other), or not at all — and what to run to finish it.
