@@ -124,8 +124,12 @@ Deliberately low-friction — no subcommand syntax to memorize for the common ca
 | `/vault-scope private` | Sets this repo to private scope, defaulting to `~/vault` (scaffolded automatically if it doesn't exist yet) |
 | `/vault-scope status` | Read-only — just prints the current resolution, no prompts |
 
-Switching scope with existing notes already in the old vault triggers an offer to copy
-them to the new one (never deletes the source — always additive).
+Switching scope always merges `chats/<project>/` (notes and any `imported/` transcripts)
+from the old vault into the new one — automatically, not an optional prompt. This runs
+every time, including the Nth time a project flips back and forth between shared and
+private, so notes accumulate correctly across the whole history: only files missing at
+the destination are copied (`cp --update=none`), so nothing already there gets
+re-clobbered, and the source is never modified or deleted.
 
 ### `/project-init`
 
@@ -278,9 +282,11 @@ You'll be asked whether to point at an existing shared vault (enter its path) or
 scaffold a brand new one at a location you choose. Nothing is created silently.
 
 **What happens to notes if I switch a repo from shared to private (or back)?**
-`/vault-scope` offers to copy existing notes for that project into the new vault. The
-old copy is never deleted — it's always an additive copy, so you can't lose notes by
-switching scope.
+`/vault-scope` automatically merges existing notes for that project into the new
+vault — no prompt, always on. The old copy is never deleted or modified, and files
+already present at the destination (from an earlier switch) are never re-clobbered,
+so you can flip a project between shared and private any number of times without
+losing or duplicating notes.
 
 **Does this require Obsidian?**
 No. Everything is plain markdown with YAML frontmatter. Obsidian (or any markdown
