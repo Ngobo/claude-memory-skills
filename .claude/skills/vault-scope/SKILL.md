@@ -78,25 +78,44 @@ echo "${found:-not found}"
     ```
   - *Cancel* → stop, no changes made.
 
-### 5. Offer to copy existing notes if the vault is actually changing
+### 5. Always copy notes between vaults when the vault is actually changing
+
+This always runs, unconditionally — no prompt, no yes/no question — on first-time
+setup **and** on every subsequent switch of an already-scoped repo. A project that
+flips private → shared → private → shared over its lifetime must not lose or
+duplicate notes at any point in that history, so this is not optional and not
+gated on asking the user.
 
 ```bash
 source ~/.claude/skills/lib/resolve-vault.sh
 resolve_vault_scope
-ls "$VAULT_DIR/chats/$VAULT_PROJECT"/*.md 2>/dev/null | head -1
+OLD_VAULT="$VAULT_DIR"
+OLD_PROJECT="$VAULT_PROJECT"
 ```
 
-If this repo already has notes under the *current* (about-to-be-replaced) vault's
-`chats/$VAULT_PROJECT/`, and the target vault path from step 4 is a different directory,
-ask via AskUserQuestion:
+(`$OLD_VAULT`/`$OLD_PROJECT` are the state resolved in step 1, i.e. *before* any
+change — capture them again here since step 4 may have run other commands since.)
 
-> "Copy existing notes to the new vault too? Yes / No"
+Compare `$OLD_VAULT` against the target vault path determined in step 4. If they
+resolve to the same directory, skip this step — nothing to copy. Otherwise, merge
+`chats/<project>/` (including any `imported/` subfolder) from the old vault into the
+new one:
 
-If yes, copy (never move/delete the source):
 ```bash
-mkdir -p "<new vault>/chats/<project>"
-cp "<old vault>/chats/<project>"/*.md "<new vault>/chats/<project>/" 2>/dev/null
+if [ -d "$OLD_VAULT/chats/$OLD_PROJECT" ]; then
+  mkdir -p "<new vault>/chats/<project>"
+  cp -r --update=none "$OLD_VAULT/chats/$OLD_PROJECT/." "<new vault>/chats/<project>/"
+  echo "Copied chats/$OLD_PROJECT/ from $OLD_VAULT to <new vault>."
+else
+  echo "No existing notes at $OLD_VAULT/chats/$OLD_PROJECT/ — nothing to copy."
+fi
 ```
+
+`--update=none` (no-clobber) means files already present at the destination from an
+earlier switch are left untouched; only files missing there get copied. The source is
+never modified or deleted. Because this always runs on every switch, a project's notes
+accumulate correctly no matter how many times it flips scope over time — each switch
+picks up exactly what's new since the last one.
 
 ### 6. Write the marker
 
@@ -138,6 +157,6 @@ steps above before running — don't leave the placeholders literal.)
 
 ### 7. Report
 
-Confirm the new scope + vault path, whether notes were copied, and remind the user to
-`git add .claude/vault-scope.json && git commit` so teammates see the same scope (for
-shared repos).
+Confirm the new scope + vault path, what was copied (or that there was nothing to
+copy), and remind the user to `git add .claude/vault-scope.json && git commit` so
+teammates see the same scope (for shared repos).
