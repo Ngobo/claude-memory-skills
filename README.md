@@ -108,6 +108,13 @@ already in place.
    to sibling project repos, generates a local `CLAUDE.md` one directory up,
    documenting the setup for anyone working in those sibling repos. This step is a
    no-op for a normal install — most people won't hit it.
+4. Installs the chat-import scripts to `~/.claude/skills/scripts/`, and checks whether
+   the extractor fork (see [chat import](#optional-automatic-chat-import) below) is
+   installed — reporting its presence/absence without installing it automatically.
+5. Offers to schedule daily automatic chat import via cron. Asked once — if you
+   decline, re-running `/setup` later asks again (the crontab itself is the record of
+   whether you've already said yes, independent of whether the extractor is installed
+   yet); if you accept, later re-runs just silently refresh the script path.
 
 Re-run `/setup` any time you pull an update to this repo, to refresh the installed
 copies in `~/.claude/skills/`.
