@@ -265,7 +265,7 @@ def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label
     """Idempotently add a frontmatter field + a visible body line linking to another
     note by its bare name (Obsidian resolves [[name]] vault-wide regardless of folder).
     No-ops if the link is already present, or if filepath has no frontmatter to anchor to."""
-    content = filepath.read_text(encoding="utf-8")
+    content = filepath.read_text(encoding="utf-8", errors="replace")
     link = f"[[{target_stem}]]"
     if f'{field_name}: "{link}"' in content:
         return  # already linked
@@ -286,6 +286,19 @@ def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label
     body_line = f"**{body_label}:** {link}"
     new_content = f"---\n{new_fm}\n---\n\n{body_line}\n\n{body.lstrip()}"
     filepath.write_text(new_content, encoding="utf-8")
+
+
+def link_summary_note_if_needed(vault_dir: Path, project: str, session_id: str, transcript_path: Path) -> None:
+    """Attempt to cross-link transcript_path with a matching summary note. Safe to call
+    on every run (including already-imported transcripts) since add_link_field is
+    idempotent -- this is what lets a session get linked even if its transcript was
+    imported before its /save note existed."""
+    if not session_id:
+        return
+    summary_path = find_matching_summary_note(vault_dir, project, session_id)
+    if summary_path:
+        add_link_field(summary_path, "full_transcript", transcript_path.stem, "Full transcript")
+        add_link_field(transcript_path, "summary_note", summary_path.stem, "Session summary")
 
 
 def insert_wikilinks(body: str, vault_notes: list[str]) -> str:
@@ -444,6 +457,9 @@ def main():
         )
         if result is None:
             skipped_already_imported += 1
+            if not args.dry_run:
+                dest = vault_dir / "chats" / project / "imported" / f.name
+                link_summary_note_if_needed(vault_dir, project, session_id, dest)
             continue
 
         results.append(result)
@@ -452,13 +468,9 @@ def main():
         print(f'{prefix}+ {result["title"]} -> {result["vault"]}/chats/{result["project"]}/imported/')
         print(f'  Origin: {result["origin"]} | Tags: {tags_str}')
 
-        if not args.dry_run and session_id:
+        if not args.dry_run:
             transcript_path = Path(result["dest"])
-            summary_path = find_matching_summary_note(vault_dir, project, session_id)
-            if summary_path:
-                add_link_field(summary_path, "full_transcript", transcript_path.stem, "Full transcript")
-                add_link_field(transcript_path, "summary_note", summary_path.stem, "Session summary")
-                print(f"  Linked -> {summary_path.name}")
+            link_summary_note_if_needed(vault_dir, project, session_id, transcript_path)
 
     if not args.dry_run:
         for touched_vault in sorted({Path(r["vault"]) for r in results}):

@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from claude_to_obsidian import find_matching_summary_note, add_link_field
+from claude_to_obsidian import find_matching_summary_note, add_link_field, link_summary_note_if_needed
 
 
 def _write(path: Path, content: str) -> None:
@@ -99,6 +99,40 @@ def test_add_link_field_is_idempotent():
         assert first == second, "second call must not change the file"
         assert second.count("full_transcript:") == 1, second
         assert second.count("**Full transcript:**") == 1, second
+
+
+def test_link_summary_note_if_needed_links_transcript_imported_before_summary_existed():
+    """Reproduces the ordering hole from Finding 1: a transcript gets imported (and thus
+    written to disk under chats/<project>/imported/) BEFORE its matching /save summary
+    note exists. At that point there's nothing to link. Later, the summary note is
+    created -- and a subsequent (non-force) run must still be able to link them, by
+    calling link_summary_note_if_needed again against the already-imported transcript."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = Path(tmp)
+        project = "proj"
+        session_id = "abc-123"
+
+        # Step 1: transcript is "already imported" -- written straight to imported/,
+        # simulating a prior run of process_file with no summary note around yet.
+        transcript_path = vault / "chats" / project / "imported" / "claude-conversation-2026-07-22-abc12345.md"
+        _write(transcript_path, '---\nsession_id: "abc-123"\n---\n\n# transcript\n')
+
+        # First attempt (no summary note yet): must be a safe no-op.
+        link_summary_note_if_needed(vault, project, session_id, transcript_path)
+        assert "summary_note:" not in transcript_path.read_text()
+
+        # Step 2: the user later runs /save, creating the matching summary note.
+        summary_path = vault / "chats" / project / "2026-07-22-10-00.md"
+        _write(summary_path, '---\nsession_id: "abc-123"\n---\n\n# Session\n')
+
+        # Step 3: simulate the next normal (non-force) import pass hitting the
+        # already-imported branch again -- this is the call the main() loop fix adds.
+        link_summary_note_if_needed(vault, project, session_id, transcript_path)
+
+        transcript_text = transcript_path.read_text()
+        summary_text = summary_path.read_text()
+        assert 'summary_note: "[[2026-07-22-10-00]]"' in transcript_text, transcript_text
+        assert f'full_transcript: "[[{transcript_path.stem}]]"' in summary_text, summary_text
 
 
 if __name__ == "__main__":
