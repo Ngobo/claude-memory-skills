@@ -12,6 +12,11 @@ stopping after the first git repo root; default to a private vault at ~/vault if
 is found. Files without `cwd:` frontmatter (exports made with the un-forked extractor) are
 skipped unless --vault-dir/--project are passed explicitly to force a single target.
 
+After processing, each touched vault that is itself a git repo gets its chats/ changes
+committed automatically (scoped to chats/ only, so unrelated in-progress edits elsewhere
+in the vault are left alone). Vaults that aren't git repos are skipped silently. This
+never pushes -- pushing to a shared vault stays a separate, explicit step.
+
 Usage:
     python3 claude_to_obsidian.py --export-dir ~/claude-exports
     python3 claude_to_obsidian.py --export-dir ~/claude-exports --dry-run
@@ -29,6 +34,7 @@ Options:
 import argparse
 import json
 import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -305,6 +311,32 @@ def process_file(
     return result
 
 
+def git_commit_if_repo(vault_dir: Path) -> None:
+    """Commit newly imported chats if this vault is a git repo; skip silently if not.
+    Scoped to the chats/ subdir so it never touches unrelated in-progress edits
+    elsewhere in the vault. Does not push -- that stays a separate, explicit step."""
+    if not (vault_dir / ".git").is_dir():
+        return
+
+    status = subprocess.run(
+        ["git", "-C", str(vault_dir), "status", "--porcelain", "chats"],
+        capture_output=True, text=True,
+    )
+    if not status.stdout.strip():
+        return
+
+    subprocess.run(["git", "-C", str(vault_dir), "add", "chats"], check=False)
+    msg = f"import chats ({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+    commit = subprocess.run(
+        ["git", "-C", str(vault_dir), "commit", "-q", "-m", msg],
+        capture_output=True, text=True,
+    )
+    if commit.returncode == 0:
+        print(f"Committed imported chats in {vault_dir}")
+    else:
+        print(f"git commit failed in {vault_dir}: {commit.stderr.strip()}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Import Claude Code chats into the correct vault, auto-routed by project")
     parser.add_argument("--export-dir", required=True, type=Path, help="Directory with exported .md files")
@@ -369,6 +401,10 @@ def main():
         prefix = "[DRY] " if args.dry_run else ""
         print(f'{prefix}+ {result["title"]} -> {result["vault"]}/chats/{result["project"]}/imported/')
         print(f'  Origin: {result["origin"]} | Tags: {tags_str}')
+
+    if not args.dry_run:
+        for touched_vault in sorted({Path(r["vault"]) for r in results}):
+            git_commit_if_repo(touched_vault)
 
     print(f"\n{'=' * 50}")
     print("SUMMARY")
