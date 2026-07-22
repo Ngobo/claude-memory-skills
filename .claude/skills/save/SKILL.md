@@ -20,7 +20,33 @@ Stop if the vault directory doesn't exist.
    - Key decisions (architectural choices, tradeoffs)
    - Open questions / next steps
 
-3. Write to `$VAULT_DIR/chats/$VAULT_PROJECT/YYYY-MM-DD-HH-MM.md`:
+3. Check whether the current session's ID is available:
+```bash
+echo "${CLAUDE_CODE_SESSION_ID:-}"
+```
+If that printed a non-empty value, write to
+`$VAULT_DIR/chats/$VAULT_PROJECT/YYYY-MM-DD-HH-MM.md` **with** a frontmatter block
+(replace `<value>` with the exact value just printed):
+
+```markdown
+---
+session_id: "<value>"
+---
+
+# Session YYYY-MM-DD
+
+## What we did
+- ...
+
+## Key decisions
+- ...
+
+## Open questions / next steps
+- ...
+```
+
+If it printed nothing (this is an internal, undocumented env var — it may not always
+be set), write the note **without** the frontmatter block, exactly as before:
 
 ```markdown
 # Session YYYY-MM-DD
