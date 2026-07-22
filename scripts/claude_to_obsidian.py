@@ -205,10 +205,11 @@ def strip_existing_frontmatter(content: str) -> tuple[dict[str, str], str]:
     return existing, body
 
 
-def build_frontmatter(title: str, tags: list[str], origin: str, created: str, project: str, cwd: str) -> str:
+def build_frontmatter(title: str, tags: list[str], origin: str, created: str, project: str, cwd: str, session_id: str = "") -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     all_tags = ["chat-import", f"project-{project}"] + [t for t in tags if t != "chat-import"]
     tags_yaml = "\n".join(f"  - {t}" for t in all_tags)
+    session_line = f'session_id: "{session_id}"\n' if session_id else ""
     return f"""---
 title: "{title}"
 tags:
@@ -217,7 +218,7 @@ source: claude
 origin: {origin}
 project: {project}
 cwd: "{cwd}"
-created: {created}
+{session_line}created: {created}
 processed: {now}
 status: imported
 type: chat
@@ -265,6 +266,7 @@ def process_file(
     vault_notes: list[str],
     project: str,
     cwd: str,
+    session_id: str,
     origin_override: str | None,
     no_wikilinks: bool,
     dry_run: bool,
@@ -289,7 +291,7 @@ def process_file(
     if not no_wikilinks:
         body = insert_wikilinks(body, vault_notes)
 
-    frontmatter = build_frontmatter(title, tags, origin, created, project, cwd)
+    frontmatter = build_frontmatter(title, tags, origin, created, project, cwd, session_id)
     output = frontmatter + body
 
     result = {
@@ -299,6 +301,7 @@ def process_file(
         "tags": tags,
         "title": title,
         "project": project,
+        "session_id": session_id,
         "vault": str(vault_dir),
     }
 
@@ -374,6 +377,7 @@ def main():
         content = f.read_text(encoding="utf-8", errors="replace")
         existing, _ = strip_existing_frontmatter(content)
         cwd = existing.get("cwd", "")
+        session_id = existing.get("session_id", "")
 
         if args.vault_dir:
             vault_dir = args.vault_dir
@@ -389,7 +393,7 @@ def main():
 
         result = process_file(
             f, vault_dir, vault_notes_cache[vault_dir],
-            project, cwd, origin_override,
+            project, cwd, session_id, origin_override,
             args.no_wikilinks, args.dry_run, args.force,
         )
         if result is None:
