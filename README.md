@@ -267,7 +267,13 @@ for routing — the plain upstream extractor doesn't include it. Once installed,
 split correctly in a single run. Idempotent: a session already imported is skipped,
 not duplicated, on every re-run (cron or manual).
 
-Re-runs are idempotent — a session already imported is skipped, not duplicated.
+After processing, each touched vault that's a git repo gets its `chats/` changes
+committed automatically (scoped to `chats/` only, so any unrelated in-progress edits
+elsewhere in the vault are left alone). Vaults that aren't git repos are skipped
+silently — nothing errors, files are still written, just not committed. This never
+pushes; pushing a shared vault stays a separate, explicit step, since auto-pushing raw
+imported transcripts to a team-visible repo unattended is a bigger call than committing
+locally.
 
 ## Repo layout
 
