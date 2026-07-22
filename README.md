@@ -162,6 +162,12 @@ Run at the end of a session. Writes a timestamped markdown note
 (`chats/<project>/YYYY-MM-DD-HH-MM.md`) summarizing what was done, key decisions, and
 open questions, then commits and pushes it if the vault is shared.
 
+When `$CLAUDE_CODE_SESSION_ID` is available, the note also gets a `session_id`
+frontmatter field. If [chat import](#optional-automatic-chat-import) is set up, this is
+what lets that session's full transcript get automatically cross-linked back to this
+summary note the next time the importer runs — in either order (transcript imported
+before or after the note is written).
+
 ## The `vault-scope.json` marker
 
 Committed to git at `.claude/vault-scope.json` in the root of each project repo:
@@ -274,6 +280,15 @@ silently — nothing errors, files are still written, just not committed. This n
 pushes; pushing a shared vault stays a separate, explicit step, since auto-pushing raw
 imported transcripts to a team-visible repo unattended is a bigger call than committing
 locally.
+
+**Linking to `/save` notes:** when a session has both an imported transcript and a
+hand-written `/save` note (matched by `session_id`), the importer cross-links them —
+each gets a `[[wikilink]]` to the other, in frontmatter and as a visible line in the
+body. This works regardless of which one existed first: if the transcript is imported
+before its `/save` note exists yet, the link is still made automatically the next time
+the importer runs (no `--force` needed), once the note shows up. Linking is idempotent
+and additive — re-running never duplicates a link, and a session with no matching note
+is simply left unlinked.
 
 ## Repo layout
 
