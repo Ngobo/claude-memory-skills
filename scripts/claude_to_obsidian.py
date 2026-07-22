@@ -261,20 +261,21 @@ def find_matching_summary_note(vault_dir: Path, project: str, session_id: str) -
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
-def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label: str) -> None:
+def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label: str) -> bool:
     """Idempotently add a frontmatter field + a visible body line linking to another
     note by its bare name (Obsidian resolves [[name]] vault-wide regardless of folder).
-    No-ops if the link is already present, or if filepath has no frontmatter to anchor to."""
+    No-ops if the link is already present, or if filepath has no frontmatter to anchor to.
+    Returns True if a new link was written, False if it was a no-op."""
     content = filepath.read_text(encoding="utf-8", errors="replace")
     link = f"[[{target_stem}]]"
     if f'{field_name}: "{link}"' in content:
-        return  # already linked
+        return False  # already linked
 
     if not content.startswith("---\n"):
-        return
+        return False
     end = content.find("\n---\n", 4)
     if end == -1:
-        return
+        return False
 
     fm_block = content[4:end]
     body = content[end + 5:]
@@ -286,19 +287,25 @@ def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label
     body_line = f"**{body_label}:** {link}"
     new_content = f"---\n{new_fm}\n---\n\n{body_line}\n\n{body.lstrip()}"
     filepath.write_text(new_content, encoding="utf-8")
+    return True
 
 
-def link_summary_note_if_needed(vault_dir: Path, project: str, session_id: str, transcript_path: Path) -> None:
+def link_summary_note_if_needed(vault_dir: Path, project: str, session_id: str, transcript_path: Path) -> Path | None:
     """Attempt to cross-link transcript_path with a matching summary note. Safe to call
     on every run (including already-imported transcripts) since add_link_field is
     idempotent -- this is what lets a session get linked even if its transcript was
-    imported before its /save note existed."""
+    imported before its /save note existed. Returns the summary note path only when a
+    NEW link was just written (so callers can report it without repeating the same
+    message on every later no-op run); None if there was no match, or the match was
+    already linked."""
     if not session_id:
-        return
+        return None
     summary_path = find_matching_summary_note(vault_dir, project, session_id)
-    if summary_path:
-        add_link_field(summary_path, "full_transcript", transcript_path.stem, "Full transcript")
-        add_link_field(transcript_path, "summary_note", summary_path.stem, "Session summary")
+    if not summary_path:
+        return None
+    linked_summary = add_link_field(summary_path, "full_transcript", transcript_path.stem, "Full transcript")
+    linked_transcript = add_link_field(transcript_path, "summary_note", summary_path.stem, "Session summary")
+    return summary_path if (linked_summary or linked_transcript) else None
 
 
 def insert_wikilinks(body: str, vault_notes: list[str]) -> str:
@@ -459,7 +466,9 @@ def main():
             skipped_already_imported += 1
             if not args.dry_run:
                 dest = vault_dir / "chats" / project / "imported" / f.name
-                link_summary_note_if_needed(vault_dir, project, session_id, dest)
+                linked = link_summary_note_if_needed(vault_dir, project, session_id, dest)
+                if linked:
+                    print(f"  Linked -> {linked.name} ({dest.name}, imported earlier)")
             continue
 
         results.append(result)
@@ -470,7 +479,9 @@ def main():
 
         if not args.dry_run:
             transcript_path = Path(result["dest"])
-            link_summary_note_if_needed(vault_dir, project, session_id, transcript_path)
+            linked = link_summary_note_if_needed(vault_dir, project, session_id, transcript_path)
+            if linked:
+                print(f"  Linked -> {linked.name}")
 
     if not args.dry_run:
         for touched_vault in sorted({Path(r["vault"]) for r in results}):
