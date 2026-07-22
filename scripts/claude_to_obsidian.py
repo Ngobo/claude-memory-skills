@@ -242,6 +242,52 @@ def collect_vault_notes(vault_dir: Path) -> list[str]:
     return notes
 
 
+def find_matching_summary_note(vault_dir: Path, project: str, session_id: str) -> Path | None:
+    """Find a hand-written /save note (chats/<project>/*.md, NOT imported/) whose
+    session_id frontmatter matches. Returns the most recently modified match, or None."""
+    if not session_id:
+        return None
+    summary_dir = vault_dir / "chats" / project
+    if not summary_dir.exists():
+        return None
+    candidates = []
+    for md in summary_dir.glob("*.md"):  # non-recursive: excludes imported/ subfolder
+        content = md.read_text(encoding="utf-8", errors="replace")
+        existing, _ = strip_existing_frontmatter(content)
+        if existing.get("session_id") == session_id:
+            candidates.append(md)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def add_link_field(filepath: Path, field_name: str, target_stem: str, body_label: str) -> None:
+    """Idempotently add a frontmatter field + a visible body line linking to another
+    note by its bare name (Obsidian resolves [[name]] vault-wide regardless of folder).
+    No-ops if the link is already present, or if filepath has no frontmatter to anchor to."""
+    content = filepath.read_text(encoding="utf-8")
+    link = f"[[{target_stem}]]"
+    if f'{field_name}: "{link}"' in content:
+        return  # already linked
+
+    if not content.startswith("---\n"):
+        return
+    end = content.find("\n---\n", 4)
+    if end == -1:
+        return
+
+    fm_block = content[4:end]
+    body = content[end + 5:]
+
+    fm_lines = [l for l in fm_block.split("\n") if not l.startswith(f"{field_name}:")]
+    fm_lines.append(f'{field_name}: "{link}"')
+    new_fm = "\n".join(fm_lines)
+
+    body_line = f"**{body_label}:** {link}"
+    new_content = f"---\n{new_fm}\n---\n\n{body_line}\n\n{body.lstrip()}"
+    filepath.write_text(new_content, encoding="utf-8")
+
+
 def insert_wikilinks(body: str, vault_notes: list[str]) -> str:
     parts = re.split(r"(```[\s\S]*?```|`[^`\n]+`)", body)
     linked: set[str] = set()
@@ -405,6 +451,14 @@ def main():
         prefix = "[DRY] " if args.dry_run else ""
         print(f'{prefix}+ {result["title"]} -> {result["vault"]}/chats/{result["project"]}/imported/')
         print(f'  Origin: {result["origin"]} | Tags: {tags_str}')
+
+        if not args.dry_run and session_id:
+            transcript_path = Path(result["dest"])
+            summary_path = find_matching_summary_note(vault_dir, project, session_id)
+            if summary_path:
+                add_link_field(summary_path, "full_transcript", transcript_path.stem, "Full transcript")
+                add_link_field(transcript_path, "summary_note", summary_path.stem, "Session summary")
+                print(f"  Linked -> {summary_path.name}")
 
     if not args.dry_run:
         for touched_vault in sorted({Path(r["vault"]) for r in results}):
