@@ -274,12 +274,17 @@ split correctly in a single run. Idempotent: a session already imported is skipp
 not duplicated, on every re-run (cron or manual).
 
 After processing, each touched vault that's a git repo gets its `chats/` changes
-committed automatically (scoped to `chats/` only, so any unrelated in-progress edits
-elsewhere in the vault are left alone). Vaults that aren't git repos are skipped
-silently — nothing errors, files are still written, just not committed. This never
-pushes; pushing a shared vault stays a separate, explicit step, since auto-pushing raw
-imported transcripts to a team-visible repo unattended is a bigger call than committing
-locally.
+committed **and pushed** automatically (scoped to `chats/` only, so any unrelated
+in-progress edits elsewhere in the vault are left alone). Vaults that aren't git repos
+are skipped silently — nothing errors, files are still written, just not committed. A
+push failure (no remote, diverged history, no network) is reported but never aborts the
+run — the commit already succeeded locally either way, and later files still get
+processed.
+
+This applies to shared vaults too: an unattended cron run will push newly-imported
+transcripts straight to a team-visible repo. If you'd rather review before anything
+becomes visible to teammates, don't rely on cron for a shared vault — run the import
+manually and push yourself when ready.
 
 **Linking to `/save` notes:** when a session has both an imported transcript and a
 hand-written `/save` note (matched by `session_id`), the importer cross-links them —
